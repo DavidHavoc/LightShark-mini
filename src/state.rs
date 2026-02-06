@@ -77,6 +77,28 @@ impl TrafficState {
         self.total_bytes
             .fetch_add(packet.length as u64, Ordering::Relaxed);
     }
+
+    /// Remove connections that haven't been seen for the given duration
+    pub fn cleanup_stale_connections(&self, timeout: tokio::time::Duration) {
+        let now = Instant::now();
+        let mut to_remove = Vec::new();
+
+        for entry in self.connections.iter() {
+            if now.duration_since(entry.value().last_seen) > timeout {
+                to_remove.push(entry.key().clone());
+            }
+        }
+
+        let removed_count = to_remove.len();
+        for key in to_remove {
+            self.connections.remove(&key);
+        }
+
+        if removed_count > 0 {
+            self.active_connections
+                .fetch_sub(removed_count, Ordering::Relaxed);
+        }
+    }
 }
 
 #[cfg(test)]

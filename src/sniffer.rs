@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::state::{PacketMetadata, TrafficState};
 use etherparse::{NetSlice, SlicedPacket, TransportSlice};
 use pcap::Device;
@@ -5,11 +6,59 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
+/// Filter configuration for packet capture
+#[derive(Clone, Debug, Default)]
+pub struct FilterConfig {
+    pub port: Option<u16>,
+    pub ip: Option<String>,
+    pub protocol: Option<String>,
+}
+
+impl From<&Config> for FilterConfig {
+    fn from(config: &Config) -> Self {
+        Self {
+            port: config.filter_port,
+            ip: config.filter_ip.clone(),
+            protocol: config.filter_protocol.clone(),
+        }
+    }
+}
+
+impl FilterConfig {
+    /// Check if a packet matches the filter criteria
+    pub fn matches(&self, meta: &PacketMetadata) -> bool {
+        // Port filter
+        if let Some(port) = self.port {
+            if meta.src_port != port && meta.dst_port != port {
+                return false;
+            }
+        }
+
+        // IP filter
+        if let Some(ref ip) = self.ip {
+            if meta.src_ip != *ip && meta.dst_ip != *ip {
+                return false;
+            }
+        }
+
+        // Protocol filter
+        if let Some(ref proto) = self.protocol {
+            if !meta.protocol.eq_ignore_ascii_case(proto) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 pub fn start_sniffer(
     interface_name: Option<String>,
     tx: Sender<PacketMetadata>,
     running: Arc<AtomicBool>,
     traffic_state: Arc<TrafficState>,
+    filter: FilterConfig,
+    quiet: bool,
 ) {
     let device = if let Some(name) = interface_name {
         Device::list()
@@ -21,7 +70,13 @@ pub fn start_sniffer(
         Device::lookup().expect("Device lookup failed").expect("No default device")
     };
 
-    println!("Capturing on device: {}", device.name);
+    if !quiet {
+        println!("Capturing on device: {}", device.name);
+        if filter.port.is_some() || filter.ip.is_some() || filter.protocol.is_some() {
+            println!("Filters: port={:?}, ip={:?}, protocol={:?}", 
+                filter.port, filter.ip, filter.protocol);
+        }
+    }
 
     let mut cap = pcap::Capture::from_device(device)
         .unwrap()
@@ -53,7 +108,7 @@ pub fn start_sniffer(
                             meta.protocol = "IPv4".to_string();
                         }
                         Some(NetSlice::Ipv6(slice)) => {
-                             let header = slice.header();
+                            let header = slice.header();
                             meta.src_ip = header.source_addr().to_string();
                             meta.dst_ip = header.destination_addr().to_string();
                             meta.protocol = "IPv6".to_string();
@@ -74,8 +129,9 @@ pub fn start_sniffer(
                         }
                         _ => {}
                     }
-                    
-                    if meta.protocol != "Unknown" {
+
+                    // Apply filters
+                    if meta.protocol != "Unknown" && filter.matches(&meta) {
                         traffic_state.update(&meta);
                         if let Err(_) = tx.blocking_send(meta) {
                             break;
@@ -86,7 +142,6 @@ pub fn start_sniffer(
             Err(pcap::Error::TimeoutExpired) => continue,
             Err(e) => {
                 eprintln!("Packet capture error: {}", e);
-            
             }
         }
     }

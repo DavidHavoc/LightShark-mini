@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # 1. The "Target" service (Traffic Generator)
   # We use Nginx just to have something that listens on a port (80)
