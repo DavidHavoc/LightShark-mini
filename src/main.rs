@@ -71,6 +71,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Spawn Data Retention Cleanup Task (if enabled)
+    if let Some(retention_seconds) = config.data_retention_seconds {
+        let storage_retention = storage.clone();
+        tokio::spawn(async move {
+            let mut retention_interval = interval(Duration::from_secs(60));
+            loop {
+                retention_interval.tick().await;
+                match storage_retention.delete_old_data(retention_seconds) {
+                    Ok(deleted) if deleted > 0 => {
+                        tracing::info!("Data retention: deleted {} old packets", deleted);
+                    }
+                    Err(e) => {
+                        tracing::error!("Data retention cleanup failed: {}", e);
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
+
     // Signal handler for graceful shutdown
     let _storage_for_shutdown = storage.clone();
     ctrlc::set_handler(move || {

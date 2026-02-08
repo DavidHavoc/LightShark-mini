@@ -1,44 +1,46 @@
 # LightShark-mini
 
-LightShark-mini is a lightweight, high-performance network traffic analyzer written in Rust. It is designed to run as a sidecar container in Docker environments, providing real-time visibility into container-to-container traffic with near-zero resource impact.
+A lightweight, high-performance network traffic analyzer written in Rust. Designed to run as a sidecar container in Docker and Kubernetes environments, providing real-time visibility into container-to-container traffic with near-zero resource impact.
 
-LightShark-mini is designed to be as light as possible, and to be able to run in a container with minimal resources. Recommended to run in a container with at least 20MB of memory. Works best with k8s and docker.
+## Highlights
+
+| Metric | Value |
+|--------|-------|
+| **Release Binary** | 5.3 MB |
+| **Stripped Binary** | 4.5 MB |
+| **Memory Usage** | ~10-15 MB |
+| **Startup Time** | < 1 second |
 
 ## Features
 
-*   **Real-time Traffic Monitoring**: LIVE dashboard data via REST API + WebSocket streaming.
-*   **Traffic Filtering**: Filter by port, IP, or protocol via CLI flags.
-*   **Low Footprint**: Targets <20MB memory usage using streaming capture and in-memory aggregation.
-*   **Persistent History**: Stores packet metadata in SQLite (WAL mode) for historical analysis.
-*   **Docker Sidecar Ready**: Seamless integration with `network_mode: service:target`.
-*   **Zero-Copy Parsing**: Uses `etherparse` for efficient packet inspection.
-*   **Config File Support**: YAML configuration for complex setups.
-*   **Connection Cleanup**: Auto-removes stale connections from memory.
+- **Real-time Monitoring** - Live dashboard via REST API + WebSocket streaming
+- **Traffic Filtering** - Filter by port, IP, or protocol
+- **Persistent History** - SQLite storage with configurable data retention
+- **Low Footprint** - Targets <20MB memory using streaming capture
+- **Sidecar Ready** - Native Docker and Kubernetes integration
+- **Zero-Copy Parsing** - Efficient packet inspection with `etherparse`
+- **Config File Support** - YAML configuration for complex setups
 
-## Prerequisites
+## Quick Start
 
-*   **Rust**: Stable toolchain (1.77+ recommended).
-*   **libpcap**: Required for packet capture (dev headers for building, runtime lib for execution).
-    *   *Debian/Ubuntu*: `sudo apt-get install libpcap-dev`
-    *   *Windows*: [Npcap](https://npcap.com/) (install in WinPcap API-compatible mode).
+### Build
 
-## Quick Start (Local)
+```bash
+cargo build --release
+```
 
-1.  **Build**:
-    ```bash
-    cargo build --release
-    ```
+### Run
 
-2.  **Run**:
-    ```bash
-    # Run with admin privileges (required for capturing)
-    ./target/release/lightshark-mini --interface eth0
-    ```
+```bash
+# Requires admin privileges for packet capture
+sudo ./target/release/lightshark-mini --interface eth0
+```
 
-3.  **Check Health**:
-    ```bash
-    curl http://localhost:3000/api/health
-    ```
+### Verify
+
+```bash
+curl http://localhost:3000/api/health
+```
 
 ## CLI Options
 
@@ -51,16 +53,45 @@ LightShark-mini is designed to be as light as possible, and to be able to run in
 | `--filter-ip` | Only capture traffic to/from this IP | - |
 | `--filter-protocol` | Only capture TCP or UDP | - |
 | `--connection-timeout` | Stale connection cleanup (seconds) | `60` |
+| `--data-retention` | Auto-delete packets older than (seconds) | disabled |
 | `-c, --config` | Path to YAML config file | - |
 | `-q, --quiet` | Suppress non-error logs | `false` |
 
+## Kubernetes Deployment
+
+LightShark-mini is optimized for Kubernetes sidecar containers:
+
+- **Sidecar-native** - Shares Pod network namespace automatically
+- **Small binary** - Fast container startup
+- **Low memory** - Well under 20 MB limit
+- **Configurable retention** - Prevents storage growth
+- **No external dependencies** - SQLite is bundled
+
+### Recommended Resource Limits
+
+```yaml
+resources:
+  requests:
+    memory: "16Mi"
+    cpu: "10m"
+  limits:
+    memory: "32Mi"
+    cpu: "100m"
+```
+
+See [HOW_TO_USE.md](HOW_TO_USE.md#kubernetes-deployment) for full deployment examples.
+
 ## Docker Usage
 
-See [HOW_TO_USE.md](HOW_TO_USE.md) for detailed instructions on deploying as a sidecar.
+Deploy as a sidecar using `network_mode: service:<target>`. See [HOW_TO_USE.md](HOW_TO_USE.md) for detailed instructions.
 
-## Kubernetes Usage
+## Prerequisites
 
-LightShark-mini works natively as a Kubernetes sidecar container. See [HOW_TO_USE.md](HOW_TO_USE.md#kubernetes-deployment) for an example.
+- **Rust**: Stable toolchain (1.77+)
+- **libpcap**: Required for packet capture
+  - *Debian/Ubuntu*: `sudo apt-get install libpcap-dev`
+  - *macOS*: Pre-installed
+  - *Windows*: [Npcap](https://npcap.com/) (WinPcap API-compatible mode)
 
 ## License
 

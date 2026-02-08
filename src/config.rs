@@ -40,6 +40,10 @@ pub struct Config {
     /// Quiet mode (suppress non-error logs)
     #[serde(default)]
     pub quiet: bool,
+
+    /// Data retention in seconds (None = keep forever, Some(seconds) = delete older data)
+    #[serde(default)]
+    pub data_retention_seconds: Option<u64>,
 }
 
 fn default_port() -> u16 {
@@ -54,6 +58,10 @@ fn default_connection_timeout() -> u64 {
     60
 }
 
+fn default_data_retention() -> Option<u64> {
+    None
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -66,6 +74,7 @@ impl Default for Config {
             connection_timeout: default_connection_timeout(),
             resolve_dns: false,
             quiet: false,
+            data_retention_seconds: default_data_retention(),
         }
     }
 }
@@ -106,6 +115,9 @@ impl Config {
         }
         if cli.quiet {
             self.quiet = true;
+        }
+        if cli.data_retention.is_some() {
+            self.data_retention_seconds = cli.data_retention;
         }
     }
 }
@@ -155,4 +167,8 @@ pub struct CliArgs {
     /// Quiet mode (suppress non-error logs)
     #[arg(short = 'q', long)]
     pub quiet: bool,
+
+    /// Data retention in seconds (delete packets older than this, disabled if not set)
+    #[arg(long)]
+    pub data_retention: Option<u64>,
 }

@@ -203,6 +203,7 @@ websocat ws://localhost:3000/api/stream
 | `--filter-ip` | Filter by IP | - |
 | `--filter-protocol` | Filter by protocol (TCP/UDP) | - |
 | `--connection-timeout` | Stale cleanup (sec) | `60` |
+| `--data-retention` | Delete packets older than (sec) | disabled |
 | `-c, --config` | YAML config file | - |
 | `-q, --quiet` | Quiet mode | `false` |
 
@@ -217,6 +218,7 @@ port: 3000
 db_path: /data/traffic.db
 filter_port: 80
 connection_timeout: 120
+data_retention_seconds: 86400  # Delete data older than 24 hours
 quiet: true
 ```
 

@@ -1,1 +1,32 @@
+# Build artifacts
 /target
+
+# Cargo lock is typically committed for binaries, but can be ignored
+# Cargo.lock
+
+# Database files
+*.db
+*.db-wal
+*.db-shm
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Config files with secrets
+config.yaml
+config.yml

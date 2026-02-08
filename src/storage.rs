@@ -1,4 +1,5 @@
 use crate::state::PacketMetadata;
+use chrono;
 use rusqlite::{params, Connection, Result};
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
@@ -130,5 +131,17 @@ impl Storage {
              result.push(row?);
          }
          Ok(result)
+    }
+
+    /// Delete packets older than the specified number of seconds
+    /// Returns the number of deleted rows
+    pub fn delete_old_data(&self, older_than_seconds: u64) -> Result<usize> {
+        let cutoff_ms = chrono::Utc::now().timestamp_millis() - (older_than_seconds as i64 * 1000);
+        let conn = self.conn.lock().unwrap();
+        let deleted = conn.execute(
+            "DELETE FROM packets WHERE timestamp < ?1",
+            params![cutoff_ms],
+        )?;
+        Ok(deleted)
     }
 }
