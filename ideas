@@ -1,1 +1,3 @@
-integration to send data to other tools (prometheus,grafana,elasticsearch)
+integration to send data to other tools (prometheus,grafana,elasticsearch) . checking the PeerAddr of incoming requests against an allowlist of IPs
+    implement Sampling or Aggregation to keep CPU and Network bandwidth low a possible
+move eBPF-based tools to avoid root 
