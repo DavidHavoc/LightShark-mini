@@ -56,8 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn Writer Task
     let storage_clone = storage.clone();
+    let aggregation_window = config.aggregation_window_seconds;
     tokio::spawn(async move {
-        storage_clone.run_writer(rx).await;
+        storage_clone.run_writer(rx, aggregation_window).await;
     });
 
     // Spawn Connection Cleanup Task
@@ -108,9 +109,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let traffic_state_clone = traffic_state.clone();
     let filter = FilterConfig::from(&config);
     let quiet = config.quiet;
+    let sample_rate = config.sample_rate;
 
     std::thread::spawn(move || {
-        sniffer::start_sniffer(interface, tx_clone, running_sniffer, traffic_state_clone, filter, quiet);
+        sniffer::start_sniffer(interface, tx_clone, running_sniffer, traffic_state_clone, filter, quiet, sample_rate);
     });
 
     // API

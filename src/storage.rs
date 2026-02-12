@@ -1,6 +1,7 @@
-use crate::state::PacketMetadata;
+use crate::state::{AggregatedBucket, PacketMetadata};
 use chrono;
 use rusqlite::{params, Connection, Result};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use tokio::time::{interval, Duration};
@@ -42,7 +43,19 @@ impl Storage {
         })
     }
 
-    pub async fn run_writer(&self, mut rx: Receiver<PacketMetadata>) {
+    /// Main writer loop. Behavior depends on `aggregation_window_seconds`:
+    ///   - 0: store every incoming packet individually (original behavior).
+    ///   - >0: accumulate per-connection stats and flush summary rows on a timer.
+    pub async fn run_writer(&self, rx: Receiver<PacketMetadata>, aggregation_window_seconds: u64) {
+        if aggregation_window_seconds == 0 {
+            self.run_writer_raw(rx).await;
+        } else {
+            self.run_writer_aggregated(rx, aggregation_window_seconds).await;
+        }
+    }
+
+    /// Original behavior: buffer individual packets and flush periodically or at threshold.
+    async fn run_writer_raw(&self, mut rx: Receiver<PacketMetadata>) {
         let mut buffer = Vec::new();
         let mut ticker = interval(Duration::from_secs(2));
 
@@ -57,6 +70,32 @@ impl Storage {
                 _ = ticker.tick() => {
                     if !buffer.is_empty() {
                         self.flush(&mut buffer);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Aggregated mode: collapse packets per connection key over a time window.
+    async fn run_writer_aggregated(&self, mut rx: Receiver<PacketMetadata>, window_secs: u64) {
+        let mut buckets: HashMap<String, AggregatedBucket> = HashMap::new();
+        let mut ticker = interval(Duration::from_secs(window_secs));
+
+        loop {
+            tokio::select! {
+                Some(packet) = rx.recv() => {
+                    let key = format!(
+                        "{}:{} -> {}:{}",
+                        packet.src_ip, packet.src_port, packet.dst_ip, packet.dst_port
+                    );
+                    buckets
+                        .entry(key)
+                        .and_modify(|b| b.merge(&packet))
+                        .or_insert_with(|| AggregatedBucket::from_packet(&packet));
+                }
+                _ = ticker.tick() => {
+                    if !buckets.is_empty() {
+                        self.flush_aggregated(&mut buckets);
                     }
                 }
             }
@@ -106,6 +145,52 @@ impl Storage {
              buffer.clear();
          }
     }
+
+    /// Flush aggregated buckets as summary rows. Each bucket becomes one row where
+    /// `length` holds the total bytes accumulated over the window.
+    fn flush_aggregated(&self, buckets: &mut HashMap<String, AggregatedBucket>) {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = match conn.transaction() {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!("Failed to start transaction: {}", e);
+                return;
+            }
+        };
+
+        {
+            let mut stmt = match tx.prepare(
+                "INSERT INTO packets (timestamp, src_ip, dst_ip, src_port, dst_port, protocol, length)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+            ) {
+                Ok(stmt) => stmt,
+                Err(e) => {
+                    eprintln!("Failed to prepare statement: {}", e);
+                    return;
+                }
+            };
+
+            for bucket in buckets.values() {
+                if let Err(e) = stmt.execute(params![
+                    bucket.first_timestamp,
+                    bucket.src_ip,
+                    bucket.dst_ip,
+                    bucket.src_port,
+                    bucket.dst_port,
+                    bucket.protocol,
+                    bucket.total_bytes as i64
+                ]) {
+                    eprintln!("Failed to insert aggregated row: {}", e);
+                }
+            }
+        }
+
+        if let Err(e) = tx.commit() {
+            eprintln!("Failed to commit transaction: {}", e);
+        } else {
+            buckets.clear();
+        }
+    }
     
     pub fn query_history(&self, limit: usize) -> Result<Vec<PacketMetadata>> {
          let conn = self.conn.lock().unwrap();
@@ -145,3 +230,4 @@ impl Storage {
         Ok(deleted)
     }
 }
+

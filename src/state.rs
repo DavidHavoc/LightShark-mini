@@ -34,6 +34,40 @@ impl Default for ConnectionStats {
     }
 }
 
+/// Holds accumulated stats for a single connection within an aggregation time window.
+/// Used by the storage writer when aggregation is enabled.
+#[derive(Debug, Clone)]
+pub struct AggregatedBucket {
+    pub first_timestamp: i64,
+    pub src_ip: String,
+    pub dst_ip: String,
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub protocol: String,
+    pub packet_count: u64,
+    pub total_bytes: u64,
+}
+
+impl AggregatedBucket {
+    pub fn from_packet(packet: &PacketMetadata) -> Self {
+        Self {
+            first_timestamp: packet.timestamp,
+            src_ip: packet.src_ip.clone(),
+            dst_ip: packet.dst_ip.clone(),
+            src_port: packet.src_port,
+            dst_port: packet.dst_port,
+            protocol: packet.protocol.clone(),
+            packet_count: 1,
+            total_bytes: packet.length as u64,
+        }
+    }
+
+    pub fn merge(&mut self, packet: &PacketMetadata) {
+        self.packet_count += 1;
+        self.total_bytes += packet.length as u64;
+    }
+}
+
 pub struct TrafficState {
     pub connections: DashMap<String, ConnectionStats>, // Key: "src_ip:port -> dst_ip:port"
     pub total_packets: AtomicU64,

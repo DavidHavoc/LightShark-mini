@@ -204,6 +204,8 @@ websocat ws://localhost:3000/api/stream
 | `--filter-protocol` | Filter by protocol (TCP/UDP) | - |
 | `--connection-timeout` | Stale cleanup (sec) | `60` |
 | `--data-retention` | Delete packets older than (sec) | disabled |
+| `--sample-rate` | Keep 1 in N packets for storage | `1` (all) |
+| `--aggregation-window` | Aggregate window in seconds | `0` (off) |
 | `-c, --config` | YAML config file | - |
 | `-q, --quiet` | Quiet mode | `false` |
 
@@ -219,6 +221,8 @@ db_path: /data/traffic.db
 filter_port: 80
 connection_timeout: 120
 data_retention_seconds: 86400  # Delete data older than 24 hours
+sample_rate: 1                 # 1 = keep all, 10 = keep every 10th packet
+aggregation_window_seconds: 0  # 0 = store raw packets, 30 = aggregate per 30s window
 quiet: true
 ```
 
@@ -226,3 +230,31 @@ Run with:
 ```bash
 ./lightshark-mini --config config.yaml
 ```
+
+## 5. Performance Tuning
+
+LightShark-mini provides two independent knobs to reduce resource usage on high-traffic hosts.
+
+### Sampling (`--sample-rate N`)
+
+Keeps only 1 out of every N packets for database storage. Live in-memory stats (`/api/live`, `/api/stats`) are **not** affected -- they always reflect all captured traffic.
+
+**Recommended values:**
+| Traffic Level | Suggested Rate | Effect |
+|---|---|---|
+| Low (< 1k pps) | `1` | Keep everything |
+| Medium (1k-10k pps) | `5`-`10` | ~80-90% reduction in DB writes |
+| High (> 10k pps) | `50`-`100` | Significant CPU/IO savings |
+
+### Aggregation (`--aggregation-window N`)
+
+Instead of storing every individual packet, collapses all packets for the same connection (src:port -> dst:port) into a single summary row per time window. The `length` field in the DB will contain total bytes for the window.
+
+**Recommended values:**
+| Use Case | Suggested Window |
+|---|---|
+| Debugging / forensics | `0` (disabled) |
+| General monitoring | `10`-`30` seconds |
+| Long-term trend analysis | `60`-`300` seconds |
+
+Both options can be combined: `--sample-rate 10 --aggregation-window 30` keeps every 10th packet and aggregates them in 30-second windows.

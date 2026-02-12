@@ -44,6 +44,18 @@ pub struct Config {
     /// Data retention in seconds (None = keep forever, Some(seconds) = delete older data)
     #[serde(default)]
     pub data_retention_seconds: Option<u64>,
+
+    /// Packet sampling rate: keep 1 out of every N packets for storage.
+    /// 1 = keep all (default), 10 = keep every 10th packet, etc.
+    /// Live in-memory stats always reflect all packets regardless of this setting.
+    #[serde(default = "default_sample_rate")]
+    pub sample_rate: u32,
+
+    /// Aggregation window in seconds. When > 0, packets are collapsed into
+    /// per-connection summary rows covering this time window before writing to the DB.
+    /// 0 = disabled (default), store every sampled packet individually.
+    #[serde(default = "default_aggregation_window")]
+    pub aggregation_window_seconds: u64,
 }
 
 fn default_port() -> u16 {
@@ -62,6 +74,14 @@ fn default_data_retention() -> Option<u64> {
     None
 }
 
+fn default_sample_rate() -> u32 {
+    1
+}
+
+fn default_aggregation_window() -> u64 {
+    0
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -75,6 +95,8 @@ impl Default for Config {
             resolve_dns: false,
             quiet: false,
             data_retention_seconds: default_data_retention(),
+            sample_rate: default_sample_rate(),
+            aggregation_window_seconds: default_aggregation_window(),
         }
     }
 }
@@ -118,6 +140,12 @@ impl Config {
         }
         if cli.data_retention.is_some() {
             self.data_retention_seconds = cli.data_retention;
+        }
+        if cli.sample_rate != 1 {
+            self.sample_rate = cli.sample_rate;
+        }
+        if cli.aggregation_window != 0 {
+            self.aggregation_window_seconds = cli.aggregation_window;
         }
     }
 }
@@ -171,4 +199,12 @@ pub struct CliArgs {
     /// Data retention in seconds (delete packets older than this, disabled if not set)
     #[arg(long)]
     pub data_retention: Option<u64>,
+
+    /// Sampling rate: keep 1 out of every N packets for storage (1 = keep all)
+    #[arg(long, default_value_t = 1)]
+    pub sample_rate: u32,
+
+    /// Aggregation window in seconds (0 = disabled, store raw packets)
+    #[arg(long, default_value_t = 0)]
+    pub aggregation_window: u64,
 }

@@ -59,6 +59,7 @@ pub fn start_sniffer(
     traffic_state: Arc<TrafficState>,
     filter: FilterConfig,
     quiet: bool,
+    sample_rate: u32,
 ) {
     let device = if let Some(name) = interface_name {
         Device::list()
@@ -85,6 +86,11 @@ pub fn start_sniffer(
         .timeout(1000)
         .open()
         .unwrap();
+
+    // Sampling: keep 1 out of every sample_rate packets for storage.
+    // A rate of 0 or 1 means keep everything.
+    let effective_rate = if sample_rate == 0 { 1 } else { sample_rate };
+    let mut sample_counter: u32 = 0;
 
     while running.load(Ordering::Relaxed) {
         match cap.next_packet() {
@@ -132,9 +138,15 @@ pub fn start_sniffer(
 
                     // Apply filters
                     if meta.protocol != "Unknown" && filter.matches(&meta) {
+                        // Always update live in-memory stats (unaffected by sampling)
                         traffic_state.update(&meta);
-                        if let Err(_) = tx.blocking_send(meta) {
-                            break;
+
+                        // Sampling gate: only forward every Nth packet to storage
+                        sample_counter = sample_counter.wrapping_add(1);
+                        if sample_counter % effective_rate == 0 {
+                            if let Err(_) = tx.blocking_send(meta) {
+                                break;
+                            }
                         }
                     }
                 }
